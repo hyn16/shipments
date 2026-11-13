@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Quét tick đơn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f2f5f8;--ink:#14213d;--mut:#5d6b82;--line:#d9e0ea;--ok:#0e9f6e;--dup:#e8a317;--none:#d64545;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1622;--ink:#e8edf5;--mut:#92a0b5;--line:#243244}}
+*{box-sizing:border-box}
+body{margin:0 auto;max-width:520px;background:var(--bg);color:var(--ink);font:500 16px/1.4 "Be Vietnam Pro",system-ui,sans-serif;padding:max(12px,env(safe-area-inset-top)) 14px max(16px,env(safe-area-inset-bottom))}
+#cam{border-radius:18px;overflow:hidden;background:#0b1220;min-height:220px;display:grid;place-items:center;color:#8fa0b8}
+#cam.on::before{content:none}
+#cam::before{content:"Camera đang tắt"}
+#reader{width:100%}
+#reader video{width:100%!important;display:block}
+button{font:inherit;font-weight:700;border:0;border-radius:12px;padding:13px 16px;background:var(--ink);color:var(--bg)}
+#bt{width:100%;margin-top:10px}
+#kq{margin-top:10px;border-radius:18px;padding:18px;min-height:112px;display:flex;flex-direction:column;justify-content:center;gap:2px;background:var(--line);color:var(--ink);transition:background .15s}
+#kq.ok{background:var(--ok);color:#fff}
+#kq.dup{background:var(--dup);color:#2b1d00}
+#kq.none{background:var(--none);color:#fff}
+#kqT{font-size:28px;line-height:1.15}
+#kqM{font-size:15px;word-break:break-all;opacity:.9}
+.cnt{display:flex;justify-content:space-between;margin:12px 2px;color:var(--mut);font-size:14px}
+.cnt b{color:var(--ink);font-size:17px}
+.tay{display:flex;gap:8px}
+.tay input{flex:1;min-width:0;font:inherit;padding:12px;border-radius:12px;border:1px solid var(--line);background:transparent;color:var(--ink)}
+#ds{list-style:none;margin:12px 0 0;padding:0}
+#ds li{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid var(--line);font-size:15px}
+#ds span{word-break:break-all}
+#ds .ok b{color:var(--ok)}#ds .dup b{color:var(--dup)}#ds .none b{color:var(--none)}
+#ds b{white-space:nowrap}
+</style>
+</head>
+<body>
+<div id="cam"><div id="reader"></div></div>
+<button id="bt">Bật camera</button>
+<div id="kq"><b id="kqT">Sẵn sàng quét</b><span id="kqM">Bật camera rồi đưa mã vạch vào khung</span></div>
+<div class="cnt"><span>Đã tick <b id="nok">0</b></span><span>Trùng <b id="ndup">0</b></span><span>Không có <b id="nnone">0</b></span></div>
+<div class="tay"><input id="tay" placeholder="Nhập mã bằng tay" autocomplete="off"><button id="gui">Gửi</button></div>
+<ul id="ds"></ul>
+
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+const URL_WEB = 'DAN_LINK_WEB_APP_VAO_DAY'; // link Apps Script dạng https://script.google.com/macros/s/.../exec
+const $ = id => document.getElementById(id);
+let key = ''; try { key = localStorage.getItem('key') || ''; } catch (e) {}
+const dem = {ok:0, dup:0, none:0}, cool = {};
+const NHAN = {ok:'Đã tick', dup:'Đã quét rồi', none:'Không có trong sheet'};
+const AM = {ok:[880,1], dup:[440,2], none:[180,1]};
+let ac, sc, wl, chay = false;
+
+function am(s) {
+  try {
+    ac = ac || new (window.AudioContext || window.webkitAudioContext)(); ac.resume();
+    let t = ac.currentTime;
+    for (let i = 0; i < AM[s][1]; i++) {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.value = AM[s][0]; g.gain.value = .25; o.connect(g); g.connect(ac.destination);
+      o.start(t); o.stop(t + .14); t += .2;
+    }
+    if (navigator.vibrate) navigator.vibrate(s === 'ok' ? 60 : [120, 60, 120]);
+  } catch (e) {}
+}
+function hien(s, t, m) {
+  $('kq').className = s; $('kqT').textContent = t; $('kqM').textContent = m || '';
+  if (AM[s]) am(s);
+}
+function ket(s, code, row) {
+  dem[s]++; $('n' + s).textContent = dem[s];
+  hien(s, NHAN[s], s === 'none' ? code : code + ' (dòng ' + row + ')');
+  const li = document.createElement('li'), a = document.createElement('span'), b = document.createElement('b');
+  li.className = s; a.textContent = code; b.textContent = NHAN[s]; li.append(a, b);
+  const ds = $('ds'); ds.prepend(li); while (ds.children.length > 15) ds.lastChild.remove();
+}
+function hoiKey() {
+  const k = prompt('Nhập mật khẩu đã đặt trong Apps Script');
+  if (!k) return false;
+  key = k.trim(); try { localStorage.setItem('key', key); } catch (e) {}
+  return true;
+}
+async function gui(code) {
+  code = String(code).trim();
+  if (!code || (!key && !hoiKey())) return;
+  const now = Date.now();
+  if (cool[code] && now - cool[code] < 4000) return;
+  cool[code] = now;
+  hien('wait', 'Đang gửi…', code);
+  try {
+    const r = await fetch(URL_WEB, {method:'POST', body:JSON.stringify({code, key})});
+    const d = await r.json();
+    if (d.s === 'ok' || d.s === 'dup' || d.s === 'none') return ket(d.s, code, d.row);
+    delete cool[code];
+    if (d.s === 'auth') { key = ''; try { localStorage.removeItem('key'); } catch (e) {} hien('none', 'Sai mật khẩu', 'Quét lại để nhập mật khẩu'); }
+    else hien('none', 'Lỗi', d.msg || '');
+  } catch (e) {
+    delete cool[code];
+    hien('none', 'Chưa gửi được', 'Kiểm tra mạng hoặc link Apps Script, rồi quét lại');
+  }
+}
+
+$('bt').onclick = async () => {
+  if (chay) {
+    try { await sc.stop(); } catch (e) {}
+    chay = false; $('cam').classList.remove('on'); $('bt').textContent = 'Bật camera';
+    try { wl && wl.release(); } catch (e) {}
+    return;
+  }
+  try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); ac.resume(); } catch (e) {}
+  if (!key && !hoiKey()) return;
+  try {
+    const F = Html5QrcodeSupportedFormats;
+    sc = sc || new Html5Qrcode('reader', {verbose:false, formatsToSupport:[F.QR_CODE, F.CODE_128, F.CODE_39, F.EAN_13, F.EAN_8, F.UPC_A, F.ITF]});
+    await sc.start({facingMode:'environment'},
+      {fps:10, qrbox:(w, h) => { const b = Math.floor(w * .9); return {width:b, height:Math.floor(Math.min(h * .8, b * .55))}; }},
+      gui, () => {});
+    chay = true; $('cam').classList.add('on'); $('bt').textContent = 'Tắt camera';
+    try { wl = await navigator.wakeLock.request('screen'); } catch (e) {}
+  } catch (e) {
+    hien('none', 'Không bật được camera', 'Cho phép camera cho trang này, và mở trang bằng https');
+  }
+};
+$('gui').onclick = () => { const v = $('tay').value; $('tay').value = ''; gui(v); };
+$('tay').addEventListener('keydown', e => { if (e.key === 'Enter') $('gui').click(); });
+</script>
+</body>
+</html>
