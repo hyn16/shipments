@@ -55,8 +55,9 @@ button{font:inherit;font-weight:700;border:0;border-radius:12px;padding:13px 16p
 <div id="tmp" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/zxing-wasm@2.2.3/dist/iife/reader/index.js"></script>
 <script>
-let URL_WEB = 'https://script.google.com/macros/s/AKfycbxDILCWk7xPUmNpPj-_Y3sMvhd88xGMGnUay18THVsPFDQ_b8Sw3115_rie5n6706Su/exec'; try { if (!/^https/.test(URL_WEB)) URL_WEB = localStorage.getItem('url') || ''; } catch (e) {} // link Apps Script dạng https://script.google.com/macros/s/.../exec
+let URL_WEB = 'DAN_LINK_WEB_APP_VAO_DAY'; try { if (!/^https/.test(URL_WEB)) URL_WEB = localStorage.getItem('url') || ''; } catch (e) {} // link Apps Script dạng https://script.google.com/macros/s/.../exec
 const $ = id => document.getElementById(id);
 let key = ''; try { key = localStorage.getItem('key') || ''; } catch (e) {}
 const cool = {};
@@ -168,17 +169,25 @@ async function docAnh(f) {
   let bm = null;
   try { bm = await createImageBitmap(f); } catch (e) {}
   if (!bm) throw 'FORMAT';
-  const lon = Math.max(bm.width, bm.height);
-  let loi = 'KHONG';
+  const lon = Math.max(bm.width, bm.height), bl = [];
   for (const t of [...new Set([1600, 1000, 640].map(x => Math.min(x, lon)))]) {
     const k = t / lon, c = document.createElement('canvas');
     c.width = Math.round(bm.width * k); c.height = Math.round(bm.height * k);
     const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
     g.drawImage(bm, 0, 0, c.width, c.height);
     const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+    bl.push(blob);
     try { return await fs.scanFile(new File([blob], 'a.png', {type:'image/png'}), false); } catch (e) {}
   }
-  throw loi;
+  if (window.ZXingWASM) {
+    for (const b of [f, bl[0]]) {
+      try {
+        const rs = (await ZXingWASM.readBarcodes(b, {tryHarder:true, maxNumberOfSymbols:6, formats:['Code128','QRCode','Code39','EAN13','ITF']})).filter(x => x.text);
+        if (rs.length) return (rs.find(x => /128/.test(x.format)) || rs[0]).text;
+      } catch (e) {}
+    }
+  }
+  throw 'KHONG ' + bm.width + 'x' + bm.height;
 }
 const nghi = ms => new Promise(r => setTimeout(r, ms));
 $('anh2').onclick = () => $('anh').click();
@@ -192,7 +201,7 @@ $('anh').onchange = async e => {
     hien('wait', 'Đang đọc ảnh ' + (i + 1) + '/' + fl.length, fl[i].name);
     let code;
     try { code = await docAnh(fl[i]); }
-    catch (err) { hong++; hien('none', 'Không đọc được mã', (err === 'FORMAT' ? 'Trình duyệt không mở được định dạng ảnh này: ' : 'Ảnh ' + (i + 1) + ': ') + fl[i].name); await nghi(900); continue; }
+    catch (err) { hong++; hien('none', 'Không đọc được mã', (err === 'FORMAT' ? 'Trình duyệt không mở được định dạng ảnh này: ' : 'Ảnh ' + (i + 1) + ': ') + fl[i].name + (String(err).startsWith('KHONG') ? ' (' + String(err).slice(6) + ')' : '')); await nghi(1500); continue; }
     const s = await gui(code, true);
     if (s && s !== 'loi') ok++; else hong++;
     await nghi(500);
